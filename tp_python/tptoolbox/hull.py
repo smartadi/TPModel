@@ -1,3 +1,6 @@
+import functools
+from concurrent.futures import ProcessPoolExecutor
+
 import numpy as np
 from scipy.optimize import minimize
 
@@ -126,13 +129,14 @@ def polarorto(U1: np.ndarray, polarv: np.ndarray):
     v[:, r - 1] = 1 - np.sum(v[:, : r - 1], axis=1)
 
     v = v + np.ones((r, 1)) * (U1[0, :] - np.sum(v, axis=0) / r)
+    eye_r = np.eye(r)
     for i in range(r):
-        U2 = U1 @ np.linalg.inv(v)
-        m = np.min(U2[:, i])
+        col_i = np.linalg.solve(v, eye_r[:, i])
+        m = np.min(U1 @ col_i)
         v = v - m * (v - np.ones((r, 1)) * v[i, :])
         v[:, r - 1] = 1 - np.sum(v[:, : r - 1], axis=1)
 
-    U2 = U1 @ np.linalg.inv(v)
+    U2 = np.linalg.solve(v.T, U1.T).T
     return U2, v
 
 
@@ -146,17 +150,47 @@ def closeness(polarv, U1, h, hh):
     v[:, r - 1] = 1 - np.sum(v[:, : r - 1], axis=1)
 
     v = v + np.ones((r, 1)) * (U1[0, :] - np.sum(v, axis=0) / r)
+    eye_r = np.eye(r)
     for i in range(r):
-        U2 = U1 @ np.linalg.inv(v)
-        m = np.min(U2[:, i])
+        # Only compute column i of U1 @ inv(v) — avoids full (n,r)@(r,r) matmul
+        col_i = np.linalg.solve(v, eye_r[:, i])
+        m = np.min(U1 @ col_i)
         v = v - m * (v - np.ones((r, 1)) * v[i, :])
         v[:, r - 1] = 1 - np.sum(v[:, : r - 1], axis=1)
 
-    U2 = U1 @ np.linalg.inv(v)
+    U2 = np.linalg.solve(v.T, U1.T).T
     norma = np.linalg.norm(np.log(np.max(U2, axis=0)), ord=h)
     vegek = np.log(np.sort(np.max(np.vstack([U2[0, :], U2[-1, :]]), axis=0)))
     norma = norma + hh * np.linalg.norm(vegek[r - 2 : r], ord=h)
     return norma
+
+
+def _closeness_flat(x, r, U1, h, hh):
+    """Picklable wrapper around closeness for multiprocessing."""
+    return closeness(x.reshape(r, r - 2), U1, h, hh)
+
+
+def _run_minimize_cno(args):
+    """Single Nelder-Mead run — picklable for ProcessPoolExecutor."""
+    x0_ravel, r, U1, h, hh = args
+    fn = functools.partial(_closeness_flat, r=r, U1=U1, h=h, hh=hh)
+    return minimize(fn, x0_ravel, method="Nelder-Mead")
+
+
+def _run_perturb_cno(args):
+    """Perturbation + local refinement run — picklable for ProcessPoolExecutor."""
+    x0_ravel, r, U1, h, hh, nlokalis = args
+    fn = functools.partial(_closeness_flat, r=r, U1=U1, h=h, hh=hh)
+    res = minimize(fn, x0_ravel, method="Nelder-Mead")
+    szamlalo = 0
+    while szamlalo < nlokalis:
+        res2 = minimize(fn, res.x, method="Nelder-Mead")
+        if res2.fun < res.fun - 0.001:
+            szamlalo = 0
+            res = res2
+        else:
+            szamlalo += 1
+    return res
 
 
 def cno(U1: np.ndarray, h, hh, nveletlen, nzavar, nlokalis):
@@ -166,7 +200,7 @@ def cno(U1: np.ndarray, h, hh, nveletlen, nzavar, nlokalis):
 
     if r == 2:
         fi2 = U1[np.argmin(U1, axis=0), :]
-        U2 = U1 @ np.linalg.inv(fi2)
+        U2 = np.linalg.solve(fi2.T, U1.T).T
         return U2, fi2
 
     center = np.ones((n, 1)) * np.sum(U1[:, : r - 1] / n, axis=0)
@@ -181,20 +215,25 @@ def cno(U1: np.ndarray, h, hh, nveletlen, nzavar, nlokalis):
     ertekmin = 1000
     polarmin = None
 
+    # Pre-generate all random starts, then run them in parallel
+    starts = []
     for _ in range(int(nveletlen)):
         veletlenhely = (rng.random((r, r - 2)) - 0.5) * np.pi
         veletlenhely[:, r - 3] *= 2
-        res = minimize(lambda x: closeness(x.reshape(r, r - 2), U1, h, hh), veletlenhely.ravel(), method="Nelder-Mead")
-        if res.fun < ertekmin:
-            ertekmin = res.fun
-            polarmin = res.x.reshape(r, r - 2)
+        starts.append((veletlenhely.ravel(), r, U1, h, hh))
+    with ProcessPoolExecutor() as executor:
+        for res in executor.map(_run_minimize_cno, starts):
+            if res.fun < ertekmin:
+                ertekmin = res.fun
+                polarmin = res.x.reshape(r, r - 2)
 
     if polarmin is None:
         polarmin = np.zeros((r, r - 2))
 
     szamlalo = 0
+    fn = functools.partial(_closeness_flat, r=r, U1=U1, h=h, hh=hh)
     while szamlalo < nlokalis:
-        res = minimize(lambda x: closeness(x.reshape(r, r - 2), U1, h, hh), polarmin.ravel(), method="Nelder-Mead")
+        res = minimize(fn, polarmin.ravel(), method="Nelder-Mead")
         if res.fun < ertekmin - 0.001:
             szamlalo = 0
             ertekmin = res.fun
@@ -202,25 +241,18 @@ def cno(U1: np.ndarray, h, hh, nveletlen, nzavar, nlokalis):
         else:
             szamlalo += 1
 
+    # Pre-generate all perturbations, then run them (with local refinement) in parallel
+    perturbs = []
     for _ in range(int(nzavar)):
         zavar = (rng.random((r, r - 2)) - 0.5) * np.pi
         zavar[:, r - 3] *= 2
-        res = minimize(
-            lambda x: closeness(x.reshape(r, r - 2), U1, h, hh),
-            (polarmin + 0.1 * rng.random() * zavar).ravel(),
-            method="Nelder-Mead",
-        )
-        szamlalo = 0
-        while szamlalo < nlokalis:
-            res2 = minimize(lambda x: closeness(x.reshape(r, r - 2), U1, h, hh), res.x, method="Nelder-Mead")
-            if res2.fun < res.fun - 0.001:
-                szamlalo = 0
-                res = res2
-            else:
-                szamlalo += 1
-        if res.fun < ertekmin:
-            ertekmin = res.fun
-            polarmin = res.x.reshape(r, r - 2)
+        x0 = (polarmin + 0.1 * rng.random() * zavar).ravel()
+        perturbs.append((x0, r, U1, h, hh, nlokalis))
+    with ProcessPoolExecutor() as executor:
+        for res in executor.map(_run_perturb_cno, perturbs):
+            if res.fun < ertekmin:
+                ertekmin = res.fun
+                polarmin = res.x.reshape(r, r - 2)
 
     if r > 3:
         for i in range(r):

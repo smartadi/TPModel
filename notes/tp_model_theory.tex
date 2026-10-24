@@ -1,0 +1,689 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+
+\geometry{margin=1.1in}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{remark}{Remark}[section]
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}{Lemma}[section]
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\mat}[1]{\mathbf{#1}}
+\newcommand{\norm}[1]{\left\|#1\right\|}
+\newcommand{\pinv}[1]{#1^{\dagger}}
+\newcommand{\ones}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+
+\title{\textbf{Tensor Product Model Transformation}\\[0.5em]
+\large Theory, Hull Decompositions, and Application to State Trajectories}
+\author{Notes}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\bigskip
+
+% ============================================================
+\section{Motivation and Overview}
+% ============================================================
+
+The \emph{Tensor Product (TP) model transformation} \cite{baranyi2004} is a
+framework for representing a parameter-varying system or a data matrix as a
+convex combination of a finite set of \emph{vertex systems}.
+Given a trajectory matrix $\mat{F} \in \R^{N \times n}$, the goal is to find
+
+\begin{equation}
+  \mat{F} \approx \mat{W}\,\mat{S},
+  \qquad \mat{W} \in \R^{N \times R'}, \quad \mat{S} \in \R^{R' \times n},
+  \label{eq:tp_form}
+\end{equation}
+
+where the rows of $\mat{W}$ (the \emph{weighting functions}) satisfy
+convexity constraints, and the rows of $\mat{S}$ are the
+\emph{vertex systems}---the prototype states whose convex combination
+reproduces $\mat{F}$.
+
+The choice of convexity constraint on $\mat{W}$ defines the \emph{hull type}:
+\begin{itemize}
+  \item \textbf{SNNN} (Sum Normalized, Non-Negative): each row of $\mat{W}$
+        sums to one and is entry-wise non-negative.
+  \item \textbf{CNO} (Close to Normal): minimises the largest weight
+        entry, making the distribution of vertex influence as balanced as possible.
+  \item \textbf{IRNO} (Inverted Reciprocal Normal): an alternative
+        normalization that equalises the reciprocal of the weights.
+\end{itemize}
+
+The TP form~\eqref{eq:tp_form} is foundational for LMI (Linear Matrix
+Inequality) based controller synthesis: once $\mat{F}$ is expressed as a
+convex combination of vertex systems, stability and performance
+conditions reduce to finite sets of LMIs evaluated at the vertices.
+
+
+% ============================================================
+\section{Data Matrix and Problem Setup}
+% ============================================================
+
+Let $\{\mat{x}_k\}_{k=0}^{T}$ be the state trajectory of a discrete-time
+system, with $\mat{x}_k \in \R^n$.  Stack the trajectory as rows of
+
+\begin{equation}
+  \mat{F} \;=\;
+  \begin{pmatrix} \mat{x}_0^\T \\ \mat{x}_1^\T \\ \vdots \\ \mat{x}_T^\T \end{pmatrix}
+  \;\in\; \R^{N \times n},
+  \qquad N = T+1.
+  \label{eq:data_matrix}
+\end{equation}
+
+The TP transformation seeks a factorisation $\mat{F} = \mat{W}\mat{S}$
+(exact or approximate) with $R'$ vertex systems, where the columns of
+$\mat{W}$ define how each vertex contributes at each time step.
+
+\begin{remark}
+In the general TP framework, $\mat{F}$ need not come from a time
+series; it can be any sampled representation of a parameter-varying
+function.  Here we specialise to state trajectories, which is the
+setting of the accompanying code.
+\end{remark}
+
+
+% ============================================================
+\section{Step 1 --- Singular Value Decomposition and Rank Truncation}
+% ============================================================
+
+\subsection{Full SVD}
+
+Compute the (economy) SVD of $\mat{F}$:
+
+\begin{equation}
+  \mat{F} = \mat{U}\,\bm{\Sigma}\,\mat{V}^\T,
+  \label{eq:svd}
+\end{equation}
+
+where
+\begin{itemize}
+  \item $\mat{U} \in \R^{N \times n}$ has orthonormal columns
+        ($\mat{U}^\T\mat{U} = \mat{I}_n$),
+  \item $\bm{\Sigma} = \mathrm{diag}(\sigma_1, \ldots, \sigma_n)$ with
+        $\sigma_1 \ge \sigma_2 \ge \cdots \ge \sigma_n \ge 0$,
+  \item $\mat{V} \in \R^{n \times n}$ is orthogonal.
+\end{itemize}
+
+\subsection{Rank Truncation}
+
+Choose rank $R$ as the number of singular values exceeding a relative
+threshold $\varepsilon$:
+
+\begin{equation}
+  R = \#\bigl\{ i : \sigma_i > \varepsilon\,\sigma_1 \bigr\},
+  \qquad R \ge 2.
+  \label{eq:rank_choice}
+\end{equation}
+
+Typical choice: $\varepsilon = 0.01$ (keep components carrying more than
+$1\%$ of the leading singular value).  Define the truncated factor
+
+\begin{equation}
+  \mat{U}_R = \mat{U}_{:,\,1:R} \in \R^{N \times R}.
+  \label{eq:Ur}
+\end{equation}
+
+The low-rank approximation is
+
+\begin{equation}
+  \mat{F} \approx \mat{U}_R\,\bm{\Sigma}_R\,\mat{V}_R^\T
+  \;=:\; \mat{U}_R\,\mat{S}_{\mathrm{SVD}},
+  \label{eq:low_rank}
+\end{equation}
+
+where $\mat{S}_{\mathrm{SVD}} = \bm{\Sigma}_R \mat{V}_R^\T \in \R^{R \times n}$
+is the ``raw'' vertex matrix in the SVD basis.
+
+\subsection{Why SVD First?}
+
+The columns of $\mat{U}_R$ form an \emph{orthonormal} basis for the
+$R$-dimensional subspace that best explains variance in $\mat{F}$.
+Working in this reduced space makes the subsequent hull decomposition
+computationally tractable and numerically well-conditioned.
+
+
+% ============================================================
+\section{Step 2 --- Inner Centering and Secondary SVD}
+\label{sec:decomp}
+% ============================================================
+
+Before applying a hull algorithm, the code centers and re-orthogonalises
+$\mat{U}_R$ to remove any mean offset.  Given input $\mat{U} \in \R^{N \times R}$:
+
+\begin{enumerate}
+  \item Compute the column-wise mean:
+    $\hat{\bm{u}} = \frac{1}{N}\mat{U}^\T\ones_N \in \R^R$.
+  \item Center: $\tilde{\mat{U}} = \mat{U} - \ones_N \hat{\bm{u}}^\T$.
+  \item Economy SVD of the centered matrix:
+    $\tilde{\mat{U}} = \mat{U}_u\,\mat{S}_u\,\mat{V}_u^\T$.
+  \item Retain $n_s$ columns where $(\mat{S}_u)_{ii} > 10^{-5}$:
+    $\mat{U}_u \leftarrow \mat{U}_u^{:,\,1:n_s}$.
+  \item If $n_s < R$ (the centered matrix has lower rank than $R$),
+    replace $\mat{U}$ with $\mat{U}_u$ for the hull step.
+\end{enumerate}
+
+After the hull is computed in the centered-and-compressed space, the
+vertex matrix is mapped back via
+
+\begin{equation}
+  \mat{S} \;\leftarrow\; \mat{S}\,\mat{S}_u\,\mat{V}_u^\T
+  + \ones_{R'}\hat{\bm{u}}^\T.
+  \label{eq:back_transform}
+\end{equation}
+
+\begin{remark}
+  In practice, when $\mat{U}$ is already the top-$R$ left singular vectors
+  of $\mat{F}$ (as in the code's main analysis path), its columns are nearly
+  zero-mean and the centering step has negligible effect.
+\end{remark}
+
+
+% ============================================================
+\section{Step 3 --- SNNN Hull Decomposition}
+% ============================================================
+
+\subsection{Definition}
+
+\begin{definition}[SNNN weighting functions]
+  A matrix $\mat{W} \in \R^{N \times R'}$ is \emph{SNNN} if
+  \begin{equation}
+    w_{ij} \ge 0 \;\;\forall\, i,j
+    \qquad \text{and} \qquad
+    \sum_{j=1}^{R'} w_{ij} = 1 \;\;\forall\, i.
+    \label{eq:snnn}
+  \end{equation}
+  Each row is a probability vector; the rows of $\mat{S}$ are the
+  \emph{vertices} of the enclosing simplex.
+\end{definition}
+
+\subsection{Construction}
+
+Given $\mat{U} \in \R^{N \times R}$ (the post-centering left singular
+vectors), construct the augmented matrix $\tilde{\mat{U}} \in \R^{N \times (R+1)}$:
+
+\begin{equation}
+  \tilde{U}_{i,\,R+1} = 1 - \sum_{j=1}^{R} U_{ij},
+  \qquad
+  \tilde{\mat{U}} = \bigl[\,\mat{U}\;\big|\;\ones_N - \mat{U}\ones_R\,\bigr].
+  \label{eq:augment}
+\end{equation}
+
+By construction, every row of $\tilde{\mat{U}}$ sums to one.  Let
+$n_a = R+1$ denote the number of augmented columns.  Define
+
+\begin{equation}
+  u_{\min} = \min(0,\;\min_{i,j}\tilde{U}_{ij}),
+  \qquad
+  u_{\max} = \max\!\left(\tfrac{2}{n_a},\;\max_{i,j}\tilde{U}_{ij}\right).
+  \label{eq:umin_umax}
+\end{equation}
+
+The floor $0$ on $u_{\min}$ and the floor $2/n_a$ on $u_{\max}$
+guarantee the denominators below are non-zero and that the resulting
+transformation is non-trivial.
+
+Compute two candidate scaling constants:
+
+\begin{equation}
+  c_1 = \frac{1}{1 - n_a\,u_{\min}}, \qquad
+  c_2 = \frac{1}{1 - n_a\,u_{\max}},
+  \label{eq:c1c2}
+\end{equation}
+
+and choose
+
+\begin{equation}
+  c = \begin{cases} c_2 & \text{if } c_1 < -c_2, \\ c_1 & \text{otherwise,} \end{cases}
+  \qquad
+  d = \frac{1-c}{n_a}.
+  \label{eq:c_choice}
+\end{equation}
+
+Form the $(n_a \times n_a)$ mixing matrix
+
+\begin{equation}
+  \mat{M} = d\,\ones_{n_a}\ones_{n_a}^\T + c\,\mat{I}_{n_a},
+  \label{eq:M}
+\end{equation}
+
+and compute the SNNN weighting matrix
+
+\begin{equation}
+  \mat{W}_{\mathrm{SNNN}} = \tilde{\mat{U}}\,\mat{M} \in \R^{N \times n_a}.
+  \label{eq:Wsnnn}
+\end{equation}
+
+\begin{theorem}[SNNN properties of $\mat{W}_{\mathrm{SNNN}}$]
+  $\mat{W}_{\mathrm{SNNN}}$ defined by \eqref{eq:Wsnnn}--\eqref{eq:c_choice}
+  satisfies the SNNN conditions \eqref{eq:snnn}.
+\end{theorem}
+
+\begin{proof}
+  \textit{(Sum to one.)} \;
+  Each entry of $\mat{W}_{\mathrm{SNNN}}$ satisfies
+  \[
+    W_{ij} = d\sum_{k}\tilde{U}_{ik} + c\,\tilde{U}_{ij}
+           = d\cdot 1 + c\,\tilde{U}_{ij},
+  \]
+  because rows of $\tilde{\mat{U}}$ sum to one.  Summing over $j$:
+  \[
+    \sum_j W_{ij} = n_a\,d + c\sum_j \tilde{U}_{ij} = n_a\,d + c\cdot 1 = (1-c)+c = 1. \checkmark
+  \]
+
+  \textit{(Non-negativity.)} \;
+  $W_{ij} = d + c\,\tilde{U}_{ij} \ge 0$ requires
+  $d \ge -c\,\tilde{U}_{ij}$ for all $i,j$.
+  The binding constraints are at $u_{\min}$ (when $c>0$) and at $u_{\max}$
+  (when $c<0$).  The definitions of $c_1$, $c_2$ are exactly the values of
+  $c$ at which these constraints become active, and the choice
+  \eqref{eq:c_choice} selects the one that yields $d + c\,u_{\min} \ge 0$
+  and $d + c\,u_{\max} \ge 0$ simultaneously. \checkmark
+\end{proof}
+
+\subsection{Vertex Matrix}
+
+The SNNN vertex matrix is obtained by least-squares:
+
+\begin{equation}
+  \mat{S}_{\mathrm{SNNN}} = \pinv{\mat{W}_{\mathrm{SNNN}}}\,\mat{F}
+  = \arg\min_{\mat{S}} \norm{\mat{F} - \mat{W}_{\mathrm{SNNN}}\mat{S}}_F.
+  \label{eq:Ssnnn}
+\end{equation}
+
+
+% ============================================================
+\section{Step 4 --- CNO Hull Decomposition}
+% ============================================================
+
+\subsection{Motivation}
+
+SNNN produces a valid simplex hull but does not minimise the
+\emph{spread} of the weighting functions.  Large maximum weights imply
+that the system spends most of its time near a single vertex, reducing
+the utility of the multi-vertex representation.  The \emph{Close to
+Normal} (CNO) algorithm seeks vertex directions that make the
+distribution of weights as uniform as possible.
+
+\subsection{Polar Coordinate Parameterisation of the Simplex}
+
+A vertex matrix $\mat{v} \in \R^{R' \times R'}$ (rows = vertices in
+weight space) is parameterised via generalised polar coordinates
+$\mat{a} \in \R^{R' \times (R'-2)}$:
+
+\begin{equation}
+  v_{i,\ell} =
+  \begin{cases}
+    \sin(a_{i,\ell})\prod_{j=1}^{\ell-1}\cos(a_{i,j}) & \ell = 1,\ldots,R'-2, \\[4pt]
+    \prod_{j=1}^{R'-2}\cos(a_{i,j}) & \ell = R'-1, \\[4pt]
+    1 - \sum_{j=1}^{R'-1}v_{i,j} & \ell = R'.
+  \end{cases}
+  \label{eq:polar}
+\end{equation}
+
+The last column enforces the simplex sum constraint.  The centre of
+$\mat{v}$ is shifted to match the centroid of the data.
+
+\subsection{Cost Function}
+
+After computing $\mat{U}_2 = \mat{U}\,\mat{v}^{-1}$ (the weights
+expressed in the vertex coordinate frame), the cost function is
+
+\begin{equation}
+  \mathcal{L}(\mat{a}) =
+  \norm{\log\max_i(\mat{U}_2)_{:,\cdot}}_h
+  + \lambda\,\norm{\log\max\!\bigl(\mat{U}_2[0,:],\,\mat{U}_2[-1,:]\bigr)_{R'-2:R'}}_h,
+  \label{eq:cno_cost}
+\end{equation}
+
+where $\|\cdot\|_h$ denotes the $h$-norm ($h=1$ in practice) and
+$\lambda > 0$ penalises large values at the boundary rows (first and
+last time steps).  Minimising $\mathcal{L}$ makes the maximum weight
+across vertices as small as possible---i.e.\ as close to $1/R'$ as possible.
+
+\begin{remark}
+The inversion $\mat{U}\,\mat{v}^{-1}$ inside the optimisation loop is
+replaced in the implementation by column-wise linear solves:
+only column $i$ of $\mat{U}\mat{v}^{-1}$ is needed at each inner
+iteration, so computing
+$\mat{c}_i = \mat{v}^{-1}\mat{e}_i$ (solving $\mat{v}\mat{c}_i = \mat{e}_i$)
+followed by $\mat{U}\mat{c}_i$ avoids the full $(N\times R')\times(R'\times R')$
+matrix multiply, reducing per-evaluation cost from $O(NR'^2)$ to $O(R'^2 + NR')$.
+\end{remark}
+
+\subsection{Optimisation Strategy}
+
+The CNO optimisation uses a multi-start Nelder--Mead scheme with three phases:
+
+\begin{enumerate}
+  \item \textbf{Random starts} (parallelised): $n_{\mathrm{vel}}$ independent
+        Nelder--Mead minimisations from random initialisations of $\mat{a}$.
+        The best result is retained as $\mat{a}^*$.
+  \item \textbf{Local refinement}: Repeat Nelder--Mead from $\mat{a}^*$ until
+        $n_{\mathrm{lok}}$ consecutive non-improving iterations.
+  \item \textbf{Perturbation search} (parallelised): $n_{\mathrm{zav}}$ perturbed
+        starts $\mat{a}^* + 0.1\,\epsilon\,\mat{z}$ (random $\mat{z}$),
+        each with its own local refinement.
+\end{enumerate}
+
+Default parameters: $n_{\mathrm{vel}} = 50$, $n_{\mathrm{zav}} = 15$,
+$n_{\mathrm{lok}} = 10$.
+
+\subsection{Back-Transformation}
+
+CNO operates on the SNNN-transformed matrix $\mat{W}_{\mathrm{SNNN}}$
+rather than $\mat{U}_R$ directly.  The returned vertex matrix $\mat{v}_2$
+and weighting matrix $\mat{U}_2$ satisfy
+
+\begin{equation}
+  \mat{W}_{\mathrm{SNNN}} = \mat{U}_2\,\mat{v}_2,
+  \quad \Rightarrow \quad
+  \mat{W}_{\mathrm{CNO}} = \mat{U}_2,
+  \quad
+  \mat{S}_{\mathrm{CNO}} = \mat{v}_2\,\mat{S}_{\mathrm{SNNN}}.
+  \label{eq:cno_chain}
+\end{equation}
+
+Thus CNO applies a linear change of vertex basis \emph{within} the SNNN
+simplex.  The SNNN constraints are preserved (the transform is an
+interior linear map of the simplex), while the maximum weight is reduced.
+
+
+% ============================================================
+\section{Step 5 --- IRNO Hull Decomposition}
+% ============================================================
+
+\subsection{Motivation}
+
+IRNO (Inverted Reciprocal Normal) seeks a scaling $c$ such that the
+normalised weight matrix satisfies a complementary normalisation: the
+reciprocal of weights is well-conditioned.  It provides an intermediate
+decomposition between SNNN (which may have very small weights) and CNO
+(which minimises the maximum weight).
+
+\subsection{Construction}
+
+IRNO also starts from $\mat{W}_{\mathrm{SNNN}}$ and finds a scalar
+$c \in [0, \infty)$ by bisection on the function
+
+\begin{equation}
+  \phi(c) = 1 - \min_i \sum_j u_{ij}^{(4)}(c)
+            - \max_j u_{i^*,j}^{(4)}(c),
+  \label{eq:rno_diff}
+\end{equation}
+
+where $u^{(4)}$ is obtained from a chain of normalisation steps applied
+to $\mat{U}$ with parameter $c$:
+
+\begin{align}
+  \mat{U}^{(1)} &= \mat{U}_0 + \frac{c-1}{R}\,(\mat{U}_0\ones_R)\ones_R^\T,
+  \label{eq:irno1}\\
+  \mat{U}^{(2)} &= \mat{U}^{(1)} - \ones_N\min_i(\mat{U}^{(1)})_j,
+  \label{eq:irno2}\\
+  \mat{U}^{(3)} &= \mat{U}^{(2)} \oslash (\ones_N\max_i(\mat{U}^{(2)})_j),
+  \label{eq:irno3}\\
+  \mat{U}^{(4)} &= \mat{U}^{(3)}\big/\max_i\sum_j U^{(3)}_{ij},
+  \label{eq:irno4}
+\end{align}
+
+where $\oslash$ denotes element-wise division.  The scalar $c^*$ is
+found by bisection on $\phi(c) = 0$ over $[0,\,c_{\max}]$, where
+$c_{\max}$ is doubled until $\phi(c_{\max}) < 0$.
+
+The IRNO weighting matrix is then
+
+\begin{equation}
+  \mat{W}_{\mathrm{IRNO}} = \bigl[\mat{U}^{(4)}(c^*)\;\big|\;
+  \ones_N - \mat{U}^{(4)}(c^*)\ones_{R}\bigr],
+  \label{eq:Wirno}
+\end{equation}
+
+and the vertex matrix follows from the transformation $\mat{f}_i$ that maps
+$\mat{W}_{\mathrm{SNNN}}$ to $\mat{W}_{\mathrm{IRNO}}$:
+
+\begin{equation}
+  \mat{S}_{\mathrm{IRNO}} = \mat{f}_i\,\mat{S}_{\mathrm{SNNN}}.
+  \label{eq:Sirno}
+\end{equation}
+
+
+% ============================================================
+\section{Vertex Systems and Reconstruction}
+% ============================================================
+
+\subsection{Vertex Systems}
+
+For any hull type $h \in \{\mathrm{SNNN},\,\mathrm{CNO},\,\mathrm{IRNO}\}$,
+the vertex matrix is computed as
+
+\begin{equation}
+  \mat{S}_h = \pinv{\mat{W}_h}\,\mat{F}
+  = \arg\min_{\mat{S}}\norm{\mat{F} - \mat{W}_h\mat{S}}_F.
+  \label{eq:vertex}
+\end{equation}
+
+Each row $\mat{s}_j \in \R^n$ ($j = 1,\ldots,R'$) is a \emph{vertex
+system}: a prototype state vector.  The full trajectory is recovered as
+
+\begin{equation}
+  \hat{\mat{F}} = \mat{W}_h\,\mat{S}_h.
+  \label{eq:recon}
+\end{equation}
+
+\subsection{Image-Space Projection}
+
+Given the observation matrix $\mat{C} \in \R^{P \times n}$ (mapping
+states to image pixels), each vertex system projects to a vertex
+\emph{image}:
+
+\begin{equation}
+  \mat{y}_j = \mat{C}\,\mat{s}_j \in \R^P.
+  \label{eq:vertex_image}
+\end{equation}
+
+The full image sequence is then
+
+\begin{equation}
+  \hat{\mat{Y}}_k = \sum_{j=1}^{R'} w_{kj}\,\mat{y}_j,
+  \label{eq:image_recon}
+\end{equation}
+
+which is a convex combination (for SNNN) of the $R'$ vertex images,
+with time-varying weights $\{w_{kj}\}$.
+
+\subsection{Reconstruction Error}
+
+The reconstruction error is the Frobenius norm of the residual:
+
+\begin{equation}
+  E_h = \norm{\mat{F} - \mat{W}_h\mat{S}_h}_F.
+  \label{eq:error}
+\end{equation}
+
+Since SNNN is a linear transform of the truncated SVD basis, and
+since $\mat{S}_h$ is the optimal least-squares solution, we have
+
+\begin{equation}
+  E_h = \norm{\mat{F} - \mat{U}_R\mat{U}_R^\T\mat{F}}_F
+  = \sqrt{\sum_{i=R+1}^{n}\sigma_i^2},
+  \label{eq:error_bound}
+\end{equation}
+
+i.e.\ the error equals the tail singular value energy regardless of
+the hull type.  In practice, when $\mat{W}_h$ does not span exactly
+the column space of $\mat{U}_R$ (due to the augmentation), $E_h$ can
+be slightly larger, but the difference is negligible.
+
+
+% ============================================================
+\section{Full Algorithm Summary}
+% ============================================================
+
+\begin{algorithm}
+\caption{TP Model Transformation of a State Trajectory}
+\begin{algorithmic}[1]
+\Require Data matrix $\mat{F} \in \R^{N \times n}$, hull type $h$,
+         threshold $\varepsilon$
+\Ensure Weighting matrix $\mat{W}_h$, vertex matrix $\mat{S}_h$,
+        error $E_h$
+
+\State $\mat{U}, \bm{\Sigma}, \mat{V}^\T \leftarrow \mathrm{SVD}(\mat{F})$
+\State $R \leftarrow \#\{i : \sigma_i > \varepsilon\,\sigma_1\}$,
+       $R \leftarrow \max(R, 2)$
+\State $\mat{U}_R \leftarrow \mat{U}_{:,1:R}$
+
+\State \textit{// Inner centering (Section~\ref{sec:decomp})}
+\State $\hat{\bm{u}} \leftarrow \frac{1}{N}\mat{U}_R^\T\ones_N$
+\State $\tilde{\mat{U}} \leftarrow \mat{U}_R - \ones_N\hat{\bm{u}}^\T$
+\State $\mat{U}_u, \mat{S}_u, \mat{V}_u \leftarrow \mathrm{SVD}(\tilde{\mat{U}})$,
+       retain $n_s$ non-negligible singular values
+
+\If{$h = \text{SNNN}$}
+  \State $\mat{W}, \mat{V}_1 \leftarrow \mathrm{SNNN}(\mat{U}_u)$
+         \hfill (Section~5)
+\ElsIf{$h = \text{CNO}$}
+  \State $\mat{W}_s, \mat{V}_1 \leftarrow \mathrm{SNNN}(\mat{U}_u)$
+  \State $\mat{W}, \mat{V}_2 \leftarrow \mathrm{CNO}(\mat{W}_s)$
+  \State $\mat{V}_1 \leftarrow \mat{V}_2\mat{V}_1$
+         \hfill (Section~6)
+\ElsIf{$h = \text{IRNO}$}
+  \State $\mat{W}_s, \mat{V}_1 \leftarrow \mathrm{SNNN}(\mat{U}_u)$
+  \State $\mat{W}, \mat{V}_2 \leftarrow \mathrm{IRNO}(\mat{W}_s)$
+  \State $\mat{V}_1 \leftarrow \mat{V}_2\mat{V}_1$
+         \hfill (Section~7)
+\EndIf
+
+\State \textit{// Back-transform vertex matrix to original space}
+\If{$n_s < R$}
+  \State $\mat{V}_1 \leftarrow \mat{V}_1\,\mathrm{diag}(\mat{S}_u)\,\mat{V}_u^\T
+          + \ones_{R'}\hat{\bm{u}}^\T$
+\EndIf
+
+\State $\mat{W}_h \leftarrow \mat{W}$
+\State $\mat{S}_h \leftarrow \pinv{\mat{W}_h}\,\mat{F}$
+       \hfill (least squares, eq.~\eqref{eq:vertex})
+\State $E_h \leftarrow \norm{\mat{F} - \mat{W}_h\mat{S}_h}_F$
+\end{algorithmic}
+\end{algorithm}
+
+
+% ============================================================
+\section{Connection to LMI-Based Controller Synthesis}
+% ============================================================
+
+The TP form $\mat{F}(p) = \sum_j w_j(p)\,\mat{s}_j$ becomes useful
+for control when $\mat{F}$ represents the parameter-dependent coefficient
+matrix of a linear system:
+
+\begin{equation}
+  \mat{x}_{k+1} = \mat{A}(p_k)\,\mat{x}_k + \mat{B}(p_k)\,\mat{u}_k,
+  \qquad
+  \mat{A}(p_k) = \sum_{j=1}^{R'} w_j(p_k)\,\mat{A}_j.
+  \label{eq:lpv}
+\end{equation}
+
+Stability of \eqref{eq:lpv} can be certified by finding a common
+quadratic Lyapunov function $\mat{P} \succ 0$ satisfying vertex LMIs:
+
+\begin{equation}
+  \mat{A}_j^\T\mat{P}\mat{A}_j - \mat{P} \prec 0,
+  \qquad j = 1, \ldots, R'.
+  \label{eq:lmi}
+\end{equation}
+
+This is tractable because only $R'$ LMIs need to be checked rather
+than an infinite family.  The SNNN property is essential: convexity of
+$\mat{W}$ guarantees that if~\eqref{eq:lmi} holds at every vertex,
+the Lyapunov condition holds everywhere.
+
+\subsection{Effect of Hull Type on Controller Design}
+
+Different hull types produce the same vertex count $R'$ but affect the
+\emph{size} of the vertex polytope and hence the conservatism of the LMI conditions:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Hull & Vertex polytope & LMI conservatism \\
+\midrule
+SNNN & Largest (standard simplex) & Most conservative \\
+IRNO & Intermediate & Intermediate \\
+CNO  & Smallest (most balanced) & Least conservative \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+CNO produces the tightest enclosure of the data trajectory, which
+translates to the least conservative LMI conditions and typically the
+best achievable controller performance.
+
+
+% ============================================================
+\section{Application to Cortical Dynamics}
+% ============================================================
+
+In the cortical system setting:
+
+\begin{itemize}
+  \item $\mat{F} = \mat{X} \in \R^{(T+1)\times n}$ is the state trajectory
+        of the cortical network ($n$ areas, $T+1$ time steps).
+
+  \item The TP decomposition extracts $R'$ \emph{cortical activation modes}
+        (vertex systems $\mat{s}_j \in \R^n$).
+
+  \item The weighting functions $w_j(k)$ describe \emph{when} and \emph{how
+        strongly} each mode dominates the cortical state.
+
+  \item Each vertex image $\mat{y}_j = \mat{C}\mat{s}_j \in \R^{100 \times 100}$
+        is a spatial activation map---interpretable as a distinct
+        cortical ``motif'' (e.g.\ visual-dominated, somatosensory-dominated,
+        resting-state).
+
+  \item The reconstruction $\hat{\mat{Y}}_k = \sum_j w_j(k)\,\mat{y}_j$
+        represents the cortical image at time $k$ as a blending of
+        the discovered motifs.
+\end{itemize}
+
+This gives a compact, interpretable decomposition of the cortical
+dynamics: instead of $n$ correlated time-series, we have $R' \le n+1$
+canonical spatial patterns and their time-varying mixture coefficients.
+
+\bigskip
+
+\begin{thebibliography}{9}
+\bibitem{baranyi2004}
+  P.\ Baranyi,
+  \textit{TP model transformation as a way to LMI-based controller design},
+  IEEE Transactions on Industrial Electronics, 51(2):387--400, 2004.
+
+\bibitem{baranyi2013}
+  P.\ Baranyi, Y.\ Yam, P.\ V\'{a}rlaki,
+  \textit{Tensor Product Model Transformation in Polytopic Model-Based
+  Control},
+  CRC Press, 2013.
+
+\bibitem{szeidl2010}
+  L.\ Szeidl, P.\ V\'{a}rlaki,
+  \textit{HOSVD-based canonical form for TP models},
+  International Journal of Advanced Intelligence Paradigms, 2010.
+\end{thebibliography}
+
+\end{document}

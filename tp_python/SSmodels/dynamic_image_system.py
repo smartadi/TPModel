@@ -178,12 +178,16 @@ def simulate(
 
     noise_chol = np.linalg.cholesky(Q)
 
+    # Pre-compute all noise and input forces in one vectorised call each
+    W = (noise_chol @ rng.standard_normal((n, T))).T          # (T, n)
+    us_arr = np.array([u_func(k) for k in range(T)])          # (T, m)
+    Bu = us_arr @ B.T                                          # (T, n)
+
     xs = np.zeros((T + 1, n))
     xs[0] = x0
 
     for k in range(T):
-        w = noise_chol @ rng.standard_normal(n)
-        xs[k + 1] = A @ xs[k] + B @ u_func(k) + w
+        xs[k + 1] = A @ xs[k] + Bu[k] + W[k]
 
     imgs = (C @ xs.T).T.reshape(T + 1, img_size, img_size)
     return xs, imgs

@@ -23,9 +23,9 @@ from tptoolbox.hull import genhull
 
 def main():
     # ---- tuneable parameters ------------------------------------------------
-    n = 5          # state dimensions
-    m = 2          # input dimensions
-    T = 300        # simulation steps
+    n = 10          # state dimensions
+    m = 5          # input dimensions
+    T = 1000        # simulation steps
 
     # ---- build system -------------------------------------------------------
     sys = build_system(n=n, m=m, decay=0.97, noise_std=0.08, seed=42)
@@ -118,9 +118,9 @@ def main():
     Uirno = genhull(Uc, "irno")
 
     # vertex systems (S) and reconstruction errors
-    Ssnnn = np.linalg.pinv(Usnnn) @ F
-    Scno = np.linalg.pinv(Ucno) @ F
-    Sirno = np.linalg.pinv(Uirno) @ F
+    Ssnnn = np.linalg.lstsq(Usnnn, F, rcond=None)[0]
+    Scno = np.linalg.lstsq(Ucno, F, rcond=None)[0]
+    Sirno = np.linalg.lstsq(Uirno, F, rcond=None)[0]
 
     Esnnn = np.linalg.norm(F - Usnnn @ Ssnnn)
     Ecno = np.linalg.norm(F - Ucno @ Scno)

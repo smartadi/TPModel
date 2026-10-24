@@ -1,0 +1,78 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\title{Cortical Dynamical System Equations (TPModel)}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+The cortical model used in this repository is a stochastic, discrete-time, linear state-space system:
+\begin{align}
+\mathbf{x}_{k+1} &= \mathbf{A}\mathbf{x}_k + \mathbf{B}\mathbf{u}_k + \mathbf{w}_k, \\
+\mathbf{y}_k &= \mathbf{C}\mathbf{x}_k.
+\end{align}
+
+Here,
+\begin{align}
+\mathbf{x}_k \in \mathbb{R}^{n},\quad
+\mathbf{u}_k \in \mathbb{R}^{m},\quad
+\mathbf{y}_k \in \mathbb{R}^{(10n)^2}.
+\end{align}
+
+\section*{State Matrix Construction}
+\begin{align}
+\mathbf{A} = \mathbf{A}_{\mathrm{base}} + \kappa\,\widetilde{\mathbf{W}}.
+\end{align}
+
+\(\mathbf{A}_{\mathrm{base}}\) is block-diagonal with damped rotation blocks
+\begin{align}
+\mathbf{R}(\theta,\delta)
+= \delta
+\begin{bmatrix}
+\cos\theta & -\sin\theta \\
+\sin\theta & \cos\theta
+\end{bmatrix}.
+\end{align}
+
+Distance-based coupling is row-normalized:
+\begin{align}
+\widetilde{W}_{ij} &\propto \exp\!\left(-\frac{d_{ij}^2}{2\sigma_c^2}\right),
+\quad \widetilde{W}_{ii}=0,
+\quad \sum_j \widetilde{W}_{ij}=1.
+\end{align}
+
+\section*{Process Noise}
+Spatial covariance:
+\begin{align}
+Q_{ij} = \sigma_w^2\exp\!\left(-\frac{d_{ij}^2}{2\sigma_Q^2}\right),
+\end{align}
+with a small diagonal regularization term added in code for positive definiteness.
+
+Temporal coloring uses AR(1):
+\begin{align}
+\mathbf{z}_k &= \alpha\mathbf{z}_{k-1} + \sqrt{1-\alpha^2}\,\boldsymbol{\varepsilon}_k,
+\quad \boldsymbol{\varepsilon}_k\sim\mathcal{N}(\mathbf{0},\mathbf{I}), \\
+\mathbf{w}_k &= \mathbf{L}\mathbf{z}_k,
+\quad \mathbf{L}\mathbf{L}^\top = \mathbf{Q}.
+\end{align}
+
+\section*{Image Observation Model}
+Each state component modulates a Gaussian spatial blob in the cortical image:
+\begin{align}
+C_{p,i} = \exp\!\left(-\frac{(x_p-x_i)^2+(y_p-y_i)^2}{2\sigma_b^2}\right),
+\end{align}
+where pixel index \(p\) corresponds to a location \((x_p,y_p)\), and \((x_i,y_i)\) is the center of cortical area \(i\).
+
+\section*{Input Matrix Construction}
+For channel \(j\) targeting area \(t_j\), input spread is Gaussian in cortical distance:
+\begin{align}
+B_{ij} &\leftarrow 0.05\,\exp\!\left(-\frac{d_{i,t_j}^2}{2\sigma_u^2}\right) \text{ (normalized)}, \\
+B_{t_j,j} &\leftarrow 0.30.
+\end{align}
+
+\end{document}

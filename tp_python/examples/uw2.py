@@ -27,29 +27,47 @@ def output_from_state(x):
 def main():
     H = 500
     omega = np.array([0, 5 * np.pi])
+    print("omega.shape:", omega.shape)
     R = 4
     g = np.linspace(omega[0], omega[1], H)
+    print("g.shape:", g.shape)
 
     X = np.vstack([oscillating_state(t, n_states=10) for t in g])
+    print("X.shape:", X.shape)
     y = np.array([output_from_state(x) for x in X])
+    print("y.shape:", y.shape)
 
     F = X
+    print("F.shape:", F.shape)
 
     U, D, Vt = np.linalg.svd(F, full_matrices=False)
+    print("U.shape:", U.shape)
+    print("D.shape:", D.shape)
+    print("Vt.shape:", Vt.shape)
     print("Singular values:", D)
 
     Uc = U[:, :R]
+    print("Uc.shape:", Uc.shape)
     Usnnn = genhull(Uc, "snnn")
+    print("Usnnn.shape:", Usnnn.shape)
     Ucno = genhull(Uc, "cno")
+    print("Ucno.shape:", Ucno.shape)
     Uirno = genhull(Uc, "irno")
+    print("Uirno.shape:", Uirno.shape)
 
     Ssnnn = np.linalg.pinv(Usnnn) @ F
+    print("Ssnnn.shape:", Ssnnn.shape)
     Scno = np.linalg.pinv(Ucno) @ F
+    print("Scno.shape:", Scno.shape)
     Sirno = np.linalg.pinv(Uirno) @ F
+    print("Sirno.shape:", Sirno.shape)
 
     Esnnn = np.linalg.norm(F - Usnnn @ Ssnnn)
+    print("Esnnn.shape:", np.array(Esnnn).shape)
     Ecno = np.linalg.norm(F - Ucno @ Scno)
+    print("Ecno.shape:", np.array(Ecno).shape)
     Eirno = np.linalg.norm(F - Uirno @ Sirno)
+    print("Eirno.shape:", np.array(Eirno).shape)
 
     print("Esnnn:", Esnnn)
     print("Ecno:", Ecno)
