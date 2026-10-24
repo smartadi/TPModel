@@ -30,3 +30,13 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# LaTeX build files and crash dumps
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.stackdump
